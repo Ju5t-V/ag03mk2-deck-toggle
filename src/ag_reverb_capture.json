@@ -1,0 +1,8 @@
+{
+  "application_sha256": "356033dc70b59b198ffab96209ecc21ec82719ec8d266aad54bba8c379e68bc9",
+  "port": "Yamaha AG03MK2-1",
+  "frames": {
+    "on": "f0 43 10 3e 1c 78 00 49 00 30 10 00 02 00 f7",
+    "off": "f0 43 10 3e 1c 78 00 4a 00 30 10 00 00 00 f7"
+  }
+}
