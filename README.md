@@ -1,10 +1,37 @@
 # AG03MK2 Deck Toggle
 
-One-click control of the **Yamaha AG03MK2** mixer's channel 1 **Mute** and **Reverb** from a Stream Deck, Ulanzi deck, macro keypad, AutoHotkey, or anything else that can run a program.
+Toggle **channel 1 Mute and Reverb** on a USB-connected Yamaha AG03MK2 from Windows. Each press reads the mixer first, so a button stays in sync after someone uses a physical switch. AG Controller can be closed.
 
-The scripts send the same MIDI SysEx frames that Yamaha AG Controller sends, then wait for the mixer to acknowledge them. Toggle actions also read the mixer's live status first, so a button always flips the real state, even if you changed it on the hardware or in AG Controller.
+## Choose a download
 
-> Windows only. Tested with AG Controller build `356033dc…` (SHA-256 checked by `ag_reverb.py`).
+The Windows x64 packages include the mixer commands and MIDI runtime. Connect the AG03MK2 by USB and make sure its Yamaha MIDI ports are available in Windows. Each package works on its own.
+
+| I use | Download | Setup |
+|---|---|---|
+| Elgato Stream Deck | `com.ju5tv.ag03mk2.streamDeckPlugin` | Open the file with Stream Deck. Find **AG03MK2 Deck Toggle** in the action list and drag **Toggle Mute** or **Toggle Reverb** onto a key. |
+| Ulanzi Studio | `com.ulanzi.ulanzistudio.ag03toggle.ulanziPlugin.zip` | Import the ZIP into Ulanzi Studio with its extension intact, then assign the two mixer actions to keys. |
+| A macro pad, hotkey launcher, or just Windows | `AG03Toggle-Windows-x64.zip` | Extract it to a permanent folder. Bind **Toggle Mute.exe** and **Toggle Reverb.exe** to your keys, or open **AG03Toggle.exe** for the desktop controls. |
+
+Public versions are distributed through [GitHub Releases](https://github.com/Ju5t-V/ag03mk2-deck-toggle/releases). Local review builds are written to `dist/`.
+
+**USB audio routing matters.** For calls or streams, the physical Mute and Reverb controls affect the mix in **INPUT MIX**. **DRY CH 1-2G** sends dry audio to the computer and bypasses hardware mute. [Yamaha AG03MK2 user guide](https://manual.yamaha.com/pa/live_streaming/ag03_06/en-US/8410785419.html)
+
+### Macro tools with argument support
+
+Point the tool at `AG03Toggle.exe` with arguments such as `mute toggle` or `reverb toggle`. Both controls also accept `on` and `off`. Use `--preview` to check the intended change. The program returns exit code 0 on success. In the desktop window, **Refresh** reads the current switch states from the mixer.
+
+## Build the downloads
+
+From the repository root, run `.\build.ps1` in PowerShell on 64-bit Windows with Python 3.12 (including Tcl/Tk), Node.js and npm. The build creates an isolated Python environment, embeds the runtime, and packages the host plugins. Run `.\build.ps1 -AppOnly` for the Windows macro build alone. To check all three archives against the built executable, run `python tools/verify_release.py dist`.
+
+The GitHub Actions workflow also builds review artifacts on manual dispatch. Pushing a version tag such as `v1.0.0` triggers the release job.
+
+## Run from source
+
+The Python commands and original batch launchers remain available for development and existing key bindings.
+
+<details>
+<summary>Python setup, legacy launchers, and MIDI troubleshooting</summary>
 
 ## Folder layout
 
@@ -67,12 +94,12 @@ AG03Toggle/
 
 | Launcher | Effect | Needs AG Controller open? |
 |---|---|---|
-| `Toggle Mute.cmd` | Flips CH1 mute, confirms the new state | Yes, for live status |
+| `Toggle Mute.cmd` | Flips CH1 mute, confirms the new state | No |
 | `Mute ON.cmd` / `Mute OFF.cmd` | Forces CH1 mute on / off | No |
-| `Toggle Reverb.cmd` | Flips CH1 reverb, confirms the new state | Yes, for live status |
+| `Toggle Reverb.cmd` | Flips CH1 reverb, confirms the new state | No |
 | `Reverb ON.cmd` / `Reverb OFF.cmd` | Forces CH1 reverb on / off | No |
 
-The toggles read the mixer's status reports. If none arrive within 2 seconds you get `No live mixer status`. Open AG Controller (it can stay minimised) and try again. If you would rather not run AG Controller, use separate ON and OFF buttons, or a two-state button (see below).
+The toggles work with AG Controller open or closed. If the mixer is quiet, the shortcut requests switch status and stops those reports after checking the result. If reports are already arriving, the shortcut uses that stream.
 
 Every launcher exits with code 0 on success and non-zero on failure, so deck software that shows an alert on failure will do so.
 
@@ -105,8 +132,6 @@ This does not need AG Controller, but the icon can drift if you also mute from t
 4. Set a title and icon and save.
 
 For an on/off key, use Ulanzi's **Multi Action / Toggle** action with `Reverb ON.cmd` as state 1 and `Reverb OFF.cmd` as state 2.
-
-If your Ulanzi Studio version can load Elgato plugins, the Stream Deck instructions above also apply.
 
 ## Macro keyboards and other decks
 
@@ -143,7 +168,7 @@ dir := "D:\path\to\AG03Toggle\launchers\"
 .\.venv\Scripts\python.exe src\ag_reverb.py on
 ```
 
-Add `--preview` to any `on`, `off` or `toggle` command to see what it would send without sending it.
+Add `--preview` to see the intended change without writing a switch setting. Toggle preview can briefly request and release status reports.
 
 ## Re-capturing the reverb frames (`learn`)
 
@@ -161,7 +186,7 @@ The script attaches to AG Controller, records the two SysEx frames it sends, and
 | Message | Fix |
 |---|---|
 | `Expected one AG03MK2 port in this direction` | Mixer unplugged, or another app holds the MIDI port exclusively. Replug, close other MIDI apps. |
-| `No live mixer status` | Toggle needs status reports. Open AG Controller, or use the ON / OFF launchers. |
+| `No confirmed live mixer status` | Check the USB connection and run the `ports` command to verify that the Yamaha MIDI input and output are available. |
 | `Another mixer toggle is busy` | Two presses overlapped. Wait a second. |
 | `No matching acknowledgement received` | The frame was sent once but the mixer didn't confirm. Check the mixer state, then press again. |
 | `No module named mido` | The launcher picked a Python without the packages. Set `AG03_PYTHON` or create `.venv` as in Setup. |
@@ -170,10 +195,12 @@ The script attaches to AG Controller, records the two SysEx frames it sends, and
 
 - Mute and reverb are switches on CH1, sent as 15-byte Yamaha SysEx frames (`F0 43 10 3E 1C 78 00 …`) to MIDI port `Yamaha AG03MK2-1`.
 - The mixer answers each write with a 14-byte acknowledgement, which the scripts check.
-- While AG Controller is running, the mixer streams 42-byte meter reports. Decoded byte 23 holds the switch flags (bit 0 = reverb, bit 5 = mute). Toggles read these to decide which way to flip, then wait for a report confirming the change.
+- The mixer streams 42-byte status reports on request. Decoded byte 23 holds the switch flags (bit 0 = reverb, bit 5 = mute). A toggle reads these flags to choose its command, then checks both the acknowledgement and the reported state.
 - A named Windows mutex keeps rapid presses in order.
 
 `tools\ag03_physical_mute_probe.py` was used to work this out. It logs MIDI traffic, the Windows capture mute flag and the input level side by side. It needs `ffmpeg` on PATH and Python 3.12 or older (it uses `audioop`).
+
+</details>
 
 ## Disclaimer
 

@@ -17,6 +17,7 @@ PROFILE = Path(__file__).with_name("ag_reverb_capture.json")
 APP = Path(r"C:\Program Files\Yamaha\AGController\AGController.exe")
 APP_SHA256 = "356033dc70b59b198ffab96209ecc21ec82719ec8d266aad54bba8c379e68bc9"
 PORT = "Yamaha AG03MK2-1"
+REVERB_MASK = 0x01
 
 
 def reverb_state(packet):
@@ -214,21 +215,70 @@ def incoming_frames(inbox, since, timeout=2):
             yield frame
 
 
-def toggle_control(control, mask, get_packet, preview):
+@contextmanager
+def switch_reports(port, inbox):
+    import mido
+
+    # Preserve an existing stream, including one requested by AG Controller.
+    for frame in incoming_frames(inbox, time.monotonic(), 0.35):
+        flags = switch_flags(frame)
+        if flags is not None:
+            yield flags
+            return
+
+    start = bytes.fromhex("f0 43 10 3e 1c 78 00 4b 00 40 10 01 00 f7")
+    stop = bytes.fromhex("f0 43 10 3e 1c 78 00 4c 00 40 10 00 00 f7")
+    since = time.monotonic()
+    port.send(mido.Message.from_bytes(start))
+    try:
+        flags = None
+        acknowledged = False
+        for frame in incoming_frames(inbox, since):
+            status = ack_status(frame, start)
+            if status not in (None, 0):
+                raise ValueError(f"Mixer rejected the status request (status {status}).")
+            if status == 0:
+                acknowledged = True
+            observed = switch_flags(frame)
+            if observed is not None:
+                flags = observed
+            if acknowledged and flags is not None:
+                yield flags
+                return
+        raise ValueError("No confirmed live mixer status received from the AG03MK2.")
+    finally:
+        cleanup_started = time.monotonic()
+        try:
+            port.send(mido.Message.from_bytes(stop))
+            for frame in incoming_frames(inbox, cleanup_started, 0.75):
+                if ack_status(frame, stop) == 0:
+                    break
+            else:
+                print("Status-report stop was not confirmed.", file=sys.stderr)
+        except (OSError, RuntimeError) as exc:
+            print(f"Could not stop status reports: {exc}", file=sys.stderr)
+
+
+@contextmanager
+def live_switches():
+    """Hold a single mixer session while reading or changing the CH1 controls."""
     import mido
 
     inbox = queue.Queue()
     def receive(message):
         inbox.put((time.monotonic(), bytes(message.bytes())))
 
-    with toggle_lock(), mido.open_input(port_name(mido.get_input_names()), callback=receive):
-        for frame in incoming_frames(inbox, time.monotonic()):
-            flags = switch_flags(frame)
-            if flags is not None:
-                break
-        else:
-            raise ValueError("No live mixer status. Open AG Controller, connect the mixer, and try again.")
+    with (toggle_lock(),
+          mido.open_input(port_name(mido.get_input_names()), callback=receive),
+          mido.open_output(port_name(mido.get_output_names()), autoreset=False) as port,
+          switch_reports(port, inbox) as flags):
+        yield port, inbox, flags
 
+
+def toggle_control(control, mask, get_packet, preview):
+    import mido
+
+    with live_switches() as (port, inbox, flags):
         turn_on = not bool(flags & mask)
         state = "on" if turn_on else "off"
         packet = get_packet(state)
@@ -236,24 +286,24 @@ def toggle_control(control, mask, get_packet, preview):
             print(f"CH1 {control} would turn {state.upper()}.")
             return
 
-        with mido.open_output(port_name(mido.get_output_names()), autoreset=False) as port:
-            sent_at = time.monotonic()
-            port.send(mido.Message.from_bytes(packet))
-            acknowledged = False
-            confirmed = False
-            for frame in incoming_frames(inbox, sent_at):
-                status = ack_status(frame, packet)
-                if status is not None:
-                    if status != 0:
-                        raise ValueError(f"Mixer returned status {status} for {control}.")
-                    acknowledged = True
-                flags = switch_flags(frame)
-                if flags is not None:
-                    confirmed = bool(flags & mask) == turn_on
-                if acknowledged and confirmed:
-                    print(f"CH1 {control} {state.upper()} confirmed.")
-                    return
-            raise ValueError(f"Sent {control} {state.upper()} once. Mixer confirmation timed out.")
+        sent_at = time.monotonic()
+        port.send(mido.Message.from_bytes(packet))
+        acknowledged = False
+        confirmed = False
+        for frame in incoming_frames(inbox, sent_at):
+            status = ack_status(frame, packet)
+            if status is not None:
+                if status != 0:
+                    raise ValueError(f"Mixer returned status {status} for {control}.")
+                acknowledged = True
+            observed = switch_flags(frame)
+            if observed is not None:
+                flags = observed
+                confirmed = bool(flags & mask) == turn_on
+            if acknowledged and confirmed:
+                print(f"CH1 {control} {state.upper()} confirmed.")
+                return flags
+        raise ValueError(f"Sent {control} {state.upper()} once. Mixer confirmation timed out.")
 
 
 def send_captured(packet, state, control="Reverb"):
@@ -288,7 +338,7 @@ def main():
     if args.preview and args.action not in ("on", "off", "toggle"):
         parser.error("--preview applies to on, off or toggle")
     if args.action == "toggle":
-        toggle_control("Reverb", 0x01, load_packet, args.preview)
+        toggle_control("Reverb", REVERB_MASK, load_packet, args.preview)
         return
     if args.action == "learn":
         learn()

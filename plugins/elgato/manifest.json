@@ -1,0 +1,33 @@
+{
+  "Name": "AG03MK2 Deck Toggle",
+  "Version": "1.0.0.0",
+  "Author": "Ju5t-V",
+  "Description": "Control channel 1 Mute and Reverb on a Yamaha AG03MK2 connected by USB.",
+  "UUID": "com.ju5tv.ag03mk2",
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.5" },
+  "OS": [{ "Platform": "windows", "MinimumVersion": "10" }],
+  "CodePath": "bin/DeckHost.exe",
+  "Icon": "images/mixer",
+  "Category": "AG03MK2 Deck Toggle",
+  "CategoryIcon": "images/category",
+  "Actions": [
+    {
+      "UUID": "com.ju5tv.ag03mk2.mute",
+      "Name": "Toggle Mute",
+      "Tooltip": "Toggle channel 1 Mute using the current mixer state.",
+      "Icon": "images/mute",
+      "Controllers": ["Keypad"],
+      "States": [{ "Image": "images/mute-key" }]
+    },
+    {
+      "UUID": "com.ju5tv.ag03mk2.reverb",
+      "Name": "Toggle Reverb",
+      "Tooltip": "Toggle channel 1 Reverb using the current mixer state.",
+      "Icon": "images/reverb",
+      "Controllers": ["Keypad"],
+      "States": [{ "Image": "images/reverb-key" }]
+    }
+  ]
+}
+
