@@ -51,6 +51,12 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$RELEASE_TAG" dist/com.ju5tv.ag03mk2.streamDeckPlugin \
-            dist/com.ulanzi.ulanzistudio.ag03toggle.ulanziPlugin.zip dist/AG03Toggle-Windows-x64.zip \
-            --verify-tag --title "$RELEASE_TAG" --generate-notes
+          files=(dist/com.ju5tv.ag03mk2.streamDeckPlugin
+                 dist/com.ulanzi.ulanzistudio.ag03toggle.ulanziPlugin.zip
+                 dist/AG03Toggle-Windows-x64.zip)
+          # A re-pushed tag refreshes the existing release's files instead of failing.
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${files[@]}" --verify-tag --title "$RELEASE_TAG" --generate-notes
+          fi
