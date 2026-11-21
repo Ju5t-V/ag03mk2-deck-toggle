@@ -4,3 +4,8 @@ build/
 dist/
 __pycache__/
 *.pyc
+
+# Local-only (not part of the repo)
+launchers/
+requirements.txt
+tools/ag03_physical_mute_probe.py

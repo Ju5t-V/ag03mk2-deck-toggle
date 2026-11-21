@@ -1,4 +1,0 @@
-mido>=1.3
-python-rtmidi>=1.5
-# Only needed for "ag_reverb.py learn":
-frida>=17
